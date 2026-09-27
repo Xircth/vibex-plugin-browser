@@ -60,9 +60,14 @@ test('MCP resource uses a packaged entrypoint and advertises tools separately', 
   const spec = JSON.parse(
     await readFile(join(root, 'contents/mcps/browser.json'), 'utf8')
   );
-  assert.equal(spec.managedRuntime.entrypoint, 'runtime/mcp-server.mjs');
+  assert.equal(spec.managedRuntime.source, 'runtime/mcp-server.mjs');
+  assert.equal(spec.managedRuntime.entrypoint, 'dist/mcp/mcp-server.mjs');
   assert.equal(spec.managedRuntime.protocolRevision, '2026-07-28');
   assert.equal(typeof spec.command, 'undefined');
+  const packaged = await readFile(join(root, spec.managedRuntime.entrypoint), 'utf8');
+  for (const name of spec.tools.map((tool) => tool.name)) {
+    assert.match(packaged, new RegExp(`name: '${name}'`));
+  }
 });
 
 test('MCP server calls generic host.call browser operations', async () => {
@@ -72,6 +77,7 @@ test('MCP server calls generic host.call browser operations', async () => {
   assert.match(source, /defaultGrant/);
   assert.match(source, /browser_open_tab/);
   assert.match(source, /await fetch\(url/);
+  assert.match(source, /host_call_unreachable/);
   assert.doesNotMatch(source, /VIBEX_BROWSER_DISPATCH/);
   assert.doesNotMatch(
     source,

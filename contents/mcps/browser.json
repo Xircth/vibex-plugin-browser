@@ -1,6 +1,7 @@
 {
   "managedRuntime": {
-    "entrypoint": "runtime/mcp-server.mjs",
+    "source": "runtime/mcp-server.mjs",
+    "entrypoint": "dist/mcp/mcp-server.mjs",
     "protocolRevision": "2026-07-28",
     "defaultBinding": "all-compatible-agents"
   },
