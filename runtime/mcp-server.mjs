@@ -11,7 +11,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const pluginRoot = currentDir.endsWith(join('dist', 'mcp'))
+  ? join(currentDir, '..', '..')
+  : join(currentDir, '..');
+
 const SUPPORTED_PROTOCOLS = [
   '2024-11-05',
   '2025-03-26',
@@ -28,71 +32,45 @@ const allTools = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'browser_snapshot',
-    operation: 'snapshot',
-    description:
-      'Read a shared tab as an ARIA tree. Refs like e1 are only valid until the next snapshot.',
-    inputSchema: {
-      type: 'object',
-      required: ['tabId'],
-      properties: {
-        tabId: { type: 'string' },
-        maxChars: { type: 'integer' },
-      },
-    },
-  },
-  {
-    name: 'browser_click',
-    operation: 'act',
-    description:
-      'Click a snapshot ref. Requires action permission and the generation from the last snapshot.',
-    inputSchema: {
-      type: 'object',
-      required: ['tabId', 'ref', 'generation'],
-      properties: {
-        tabId: { type: 'string' },
-        ref: { type: 'string' },
-        generation: { type: 'string' },
-        kind: { type: 'string' },
-      },
-    },
-  },
-  {
-    name: 'browser_type',
-    operation: 'act',
-    description: 'Type into a snapshot ref. Requires action permission.',
-    inputSchema: {
-      type: 'object',
-      required: ['tabId', 'ref', 'generation', 'text'],
-      properties: {
-        tabId: { type: 'string' },
-        ref: { type: 'string' },
-        generation: { type: 'string' },
-        text: { type: 'string' },
-        kind: { type: 'string' },
-      },
-    },
-  },
-  {
     name: 'browser_open_tab',
     operation: 'tab.create',
-    description: 'Open a new built-in browser tab on an http(s) address.',
+    description:
+      'Open a new built-in browser tab on an http(s) address and wait for initial load.',
     inputSchema: {
       type: 'object',
       required: ['url'],
-      properties: { url: { type: 'string' } },
+      properties: {
+        url: { type: 'string', description: 'http(s) URL to open' },
+        profileId: {
+          type: 'string',
+          description: 'Optional browser profile ID',
+        },
+        waitForLoad: {
+          type: 'boolean',
+          description: 'Wait for page load to settle (default: true)',
+        },
+      },
     },
   },
   {
     name: 'browser_navigate',
     operation: 'tab.navigate',
-    description: 'Point an existing shared tab at a new address.',
+    description:
+      'Point an existing shared tab at a new http(s) address and wait for load.',
     inputSchema: {
       type: 'object',
-      required: ['tabId', 'url'],
+      required: ['url'],
       properties: {
-        tabId: { type: 'string' },
-        url: { type: 'string' },
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        url: { type: 'string', description: 'http(s) URL to navigate to' },
+        waitForLoad: {
+          type: 'boolean',
+          description: 'Wait for page load to settle (default: true)',
+        },
       },
     },
   },
@@ -107,15 +85,211 @@ const allTools = [
     },
   },
   {
+    name: 'browser_snapshot',
+    operation: 'snapshot',
+    description:
+      'Read a shared tab as an ARIA accessibility tree. Refs like e1 and the generation token are valid until the next snapshot or navigation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        maxChars: {
+          type: 'integer',
+          description: 'Character budget for the tree (4000-120000).',
+        },
+      },
+    },
+  },
+  {
+    name: 'browser_console_messages',
+    operation: 'console.read',
+    description:
+      'Read console messages and uncaught page errors recorded on a shared tab since the last navigation.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        since: {
+          type: 'integer',
+          description:
+            'Cursor from a previous browser_console_messages call; only newer messages are returned.',
+        },
+        minLevel: {
+          type: 'string',
+          enum: ['debug', 'log', 'info', 'warn', 'error'],
+          description: 'Minimum severity level to include.',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Maximum number of entries to return (1-200).',
+        },
+      },
+    },
+  },
+  {
+    name: 'browser_screenshot',
+    operation: 'screenshot',
+    description:
+      'Capture the visible viewport of a shared tab, or crop to one snapshot ref.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        generation: {
+          type: 'string',
+          description:
+            'Snapshot generation token when cropping to a specific ref.',
+        },
+        ref: {
+          type: 'string',
+          description: 'Snapshot ref (e.g. e4) to scroll into view and crop.',
+        },
+        maxWidth: {
+          type: 'integer',
+          description: 'Maximum output image width in pixels (default 1280).',
+        },
+        format: {
+          type: 'string',
+          enum: ['png', 'jpeg'],
+          description: 'Output image format (default png).',
+        },
+      },
+    },
+  },
+  {
+    name: 'browser_click',
+    operation: 'act',
+    description:
+      'Click a snapshot ref on a control-shared tab. Scrolls into view first.',
+    inputSchema: {
+      type: 'object',
+      required: ['ref', 'generation'],
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        ref: { type: 'string' },
+        generation: { type: 'string' },
+        kind: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'browser_hover',
+    operation: 'act',
+    description:
+      'Move pointer over a snapshot ref on a control-shared tab without clicking.',
+    inputSchema: {
+      type: 'object',
+      required: ['ref', 'generation'],
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        ref: { type: 'string' },
+        generation: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'browser_type',
+    operation: 'act',
+    description:
+      'Fill text into an input, textarea, or contenteditable snapshot ref on a control-shared tab.',
+    inputSchema: {
+      type: 'object',
+      required: ['ref', 'generation', 'text'],
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        ref: { type: 'string' },
+        generation: { type: 'string' },
+        text: { type: 'string' },
+        submit: {
+          type: 'boolean',
+          description:
+            'Press Enter / submit the enclosing form after filling text.',
+        },
+        kind: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'browser_press_key',
+    operation: 'act',
+    description:
+      'Send a keyboard key (e.g. Enter, Escape, Tab, ArrowDown) to a snapshot ref or the active element on a control-shared tab.',
+    inputSchema: {
+      type: 'object',
+      required: ['generation', 'key'],
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        generation: { type: 'string' },
+        key: { type: 'string' },
+        ref: {
+          type: 'string',
+          description: 'Optional ref to focus before pressing the key.',
+        },
+      },
+    },
+  },
+  {
+    name: 'browser_select_option',
+    operation: 'act',
+    description:
+      'Select an option by value or visible label on a <select> snapshot ref on a control-shared tab.',
+    inputSchema: {
+      type: 'object',
+      required: ['ref', 'generation', 'value'],
+      properties: {
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
+        ref: { type: 'string' },
+        generation: { type: 'string' },
+        value: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'browser_eval',
     operation: 'eval.run',
     description:
-      'Run JavaScript on a shared tab. Every snippet is shown to the user first.',
+      'Run JavaScript on a control-shared tab. Depending on user settings, the snippet is either confirmed by the user or executed directly.',
     inputSchema: {
       type: 'object',
-      required: ['tabId', 'code'],
+      required: ['code'],
       properties: {
-        tabId: { type: 'string' },
+        tabId: {
+          type: 'string',
+          description:
+            'Target tab ID. Optional when only one browser tab is open.',
+        },
         code: { type: 'string' },
       },
     },
@@ -124,16 +298,32 @@ const allTools = [
 
 function readConfig() {
   try {
-    const raw = JSON.parse(readFileSync(join(pluginRoot, 'config.json'), 'utf8'));
+    const raw = JSON.parse(
+      readFileSync(join(pluginRoot, 'config.json'), 'utf8')
+    );
     const grant = raw.defaultGrant;
+    const evalApproval = raw.evalApproval;
     return {
-      toolsEnabled: raw.toolsEnabled === true,
-      evalEnabled: raw.evalEnabled === true,
+      toolsEnabled: raw.toolsEnabled !== false,
+      evalEnabled: raw.evalEnabled !== false,
       defaultGrant:
-        grant === 'read' || grant === 'control' ? grant : 'none',
+        grant === 'read' || grant === 'control' || grant === 'none'
+          ? grant
+          : 'control',
+      evalApproval: evalApproval === 'silent' ? 'silent' : 'ask',
+      newTabProfile:
+        typeof raw.newTabProfile === 'string' && raw.newTabProfile.trim()
+          ? raw.newTabProfile.trim()
+          : 'default',
     };
   } catch {
-    return { toolsEnabled: false, evalEnabled: false, defaultGrant: 'none' };
+    return {
+      toolsEnabled: true,
+      evalEnabled: true,
+      defaultGrant: 'control',
+      evalApproval: 'ask',
+      newTabProfile: 'default',
+    };
   }
 }
 
@@ -161,6 +351,13 @@ function send(message) {
 
 function reply(id, result) {
   send({ jsonrpc: '2.0', id, result });
+}
+
+function replyToolError(id, message) {
+  reply(id, {
+    isError: true,
+    content: [{ type: 'text', text: message }],
+  });
 }
 
 function fail(id, message, code = -32000) {
@@ -192,9 +389,203 @@ async function callHost(capability, operation, input) {
   }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.message ?? `host_call_${response.status}`);
+    const code = body.code ? `${body.code}: ` : '';
+    throw new Error(
+      `${code}${body.message ?? `host_call_${response.status}`}`
+    );
   }
   return body;
+}
+
+function renderTabsResult(result) {
+  const tabs = Array.isArray(result?.tabs) ? result.tabs : [];
+  const lines = [`### Open tabs (${tabs.length})`];
+  if (tabs.length === 0) {
+    lines.push('(no built-in browser tabs are open)');
+  } else {
+    for (const tab of tabs) {
+      const share = tab?.grant?.level ?? 'not shared';
+      const state = tab?.loading ? 'loading' : 'ready';
+      const title = tab?.title ? JSON.stringify(tab.title) : '"(untitled)"';
+      lines.push(
+        `- \`${tab.tabId}\` [${share}, ${state}] ${title} — ${tab.url}`
+      );
+    }
+  }
+  lines.push('', '```json', JSON.stringify(result), '```');
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+function renderTabOpResult(verb, result) {
+  if (result && typeof result === 'object' && 'tabId' in result && 'url' in result) {
+    const share = result?.grant?.level ?? 'not shared';
+    const state = result?.loading ? 'loading' : 'ready';
+    const lines = [
+      `### Tab ${verb}`,
+      `- Tab: \`${result.tabId}\` [${share}, ${state}]`,
+      `- URL: ${result.url}`,
+      `- Title: ${result.title || '(untitled)'}`,
+      `- Profile: \`${result.profileId || 'default'}\``,
+      '',
+      '```json',
+      JSON.stringify(result),
+      '```',
+    ];
+    return [{ type: 'text', text: lines.join('\n') }];
+  }
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+function renderSnapshotResult(result) {
+  const vp = result?.viewport ?? {};
+  const lines = [
+    '### Page',
+    `- Tab: \`${result.tabId}\``,
+    `- URL: ${result.url}`,
+    `- Title: ${result.title || '(untitled)'}`,
+    `- Generation: \`${result.generation}\` (pass this to click / hover / type / press_key / select_option / screenshot)`,
+    `- Viewport: ${vp.width ?? 0}x${vp.height ?? 0} @ scroll (${vp.scrollX ?? 0}, ${vp.scrollY ?? 0})`,
+    `- Interactive refs: ${result.refsCount ?? 0}${result.truncated ? ' (tree truncated to budget)' : ''}`,
+    '',
+    '### Accessibility tree',
+    '```text',
+    String(result.snapshot ?? result.tree ?? '(empty document)').trimEnd(),
+    '```',
+    '',
+    '```json',
+    JSON.stringify({
+      tabId: result.tabId,
+      generation: result.generation,
+      url: result.url,
+      title: result.title,
+      viewport: result.viewport,
+      refsCount: result.refsCount,
+      truncated: result.truncated,
+    }),
+    '```',
+  ];
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+function renderConsoleResult(result) {
+  const entries = Array.isArray(result?.entries) ? result.entries : [];
+  const lines = [
+    `### Console (${entries.length} message${entries.length === 1 ? '' : 's'})`,
+    `- URL: ${result.url || ''}`,
+    `- Next cursor: \`${result.nextSeq ?? 0}\` (pass as \`since\` to read only newer messages)`,
+  ];
+  if ((result.dropped ?? 0) > 0) {
+    lines.push(
+      `- Note: ${result.dropped} older message(s) were evicted from the ring buffer`
+    );
+  }
+  if ((result.crossOriginDropped ?? 0) > 0) {
+    lines.push(
+      `- Note: ${result.crossOriginDropped} cross-origin frame message(s) were redacted`
+    );
+  }
+  lines.push('');
+  if (entries.length === 0) {
+    lines.push('(no matching console messages)');
+  } else {
+    lines.push('```text');
+    for (const entry of entries) {
+      const tag =
+        entry.source === 'pageerror'
+          ? 'pageerror'
+          : entry.source === 'unhandledrejection'
+            ? 'rejection'
+            : entry.level;
+      const where = entry.url
+        ? entry.line != null
+          ? ` (${entry.url}:${entry.line})`
+          : ` (${entry.url})`
+        : '';
+      lines.push(`#${entry.seq} [${tag}]${where} ${entry.text}`);
+    }
+    lines.push('```');
+  }
+  lines.push('', '```json', JSON.stringify(result), '```');
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+function renderCaptureResult(result) {
+  const scope = result.target ? `ref=${result.target}` : 'viewport';
+  const summary = [
+    `### Screenshot (${scope}, ${result.width}x${result.height}, ${result.mime})`,
+    `- URL: ${result.url}`,
+  ].join('\n');
+  const blocks = [{ type: 'text', text: summary }];
+  if (result.data && result.mime) {
+    blocks.push({
+      type: 'image',
+      data: result.data,
+      mimeType: result.mime,
+    });
+  }
+  return blocks;
+}
+
+function renderActResult(verb, result) {
+  if (!result?.ok) {
+    throw new Error(
+      result?.error
+        ? `browser_act_failed: ${result.error}`
+        : `browser_${verb}_failed`
+    );
+  }
+  const s = result.scrolled;
+  const scrollNote = s
+    ? ` (scrolledIntoView=${Boolean(s.scrolled)}, inViewport=${Boolean(s.inViewport)})`
+    : '';
+  const text = `${verb}: ok [${result.fidelity ?? 'synthetic'}]${scrollNote} — ${result.url}\n\n\`\`\`json\n${JSON.stringify(result)}\n\`\`\``;
+  return [{ type: 'text', text }];
+}
+
+function renderEvalResult(result) {
+  const lines = [
+    '### Eval result',
+    `- Tab: \`${result.tabId}\``,
+    `- Value: ${result.value ?? 'undefined'}`,
+    '',
+    '```json',
+    JSON.stringify(result),
+    '```',
+  ];
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+function formatToolOutput(toolName, result) {
+  switch (toolName) {
+    case 'browser_list_tabs':
+      return renderTabsResult(result);
+    case 'browser_open_tab':
+      return renderTabOpResult('opened', result);
+    case 'browser_navigate':
+      return renderTabOpResult('navigated', result);
+    case 'browser_close_tab':
+      return renderTabOpResult('closed', result);
+    case 'browser_snapshot':
+      return renderSnapshotResult(result);
+    case 'browser_console_messages':
+      return renderConsoleResult(result);
+    case 'browser_screenshot':
+      return renderCaptureResult(result);
+    case 'browser_click':
+      return renderActResult('click', result);
+    case 'browser_hover':
+      return renderActResult('hover', result);
+    case 'browser_type':
+      return renderActResult('type', result);
+    case 'browser_press_key':
+      return renderActResult('press', result);
+    case 'browser_select_option':
+      return renderActResult('select', result);
+    case 'browser_eval':
+      return renderEvalResult(result);
+    default:
+      return [{ type: 'text', text: JSON.stringify(result) }];
+  }
 }
 
 function negotiateProtocol(requested) {
@@ -202,6 +593,134 @@ function negotiateProtocol(requested) {
     return requested;
   }
   return '2026-07-28';
+}
+
+function isUnimplementedHostError(error) {
+  const msg = error instanceof Error ? error.message : String(error ?? '');
+  return (
+    msg.includes('capability_unimplemented') ||
+    msg.includes('is not implemented') ||
+    msg.includes('browser_unsupported_operation')
+  );
+}
+
+async function resolveFallbackTab(explicitTabId) {
+  const listed = await callHost('browser', 'tab.list', {});
+  const tabs = Array.isArray(listed?.tabs) ? listed.tabs : [];
+  if (explicitTabId) {
+    const found = tabs.find((t) => t.tabId === explicitTabId);
+    if (!found) throw new Error(`browser_no_such_tab: no tab ${explicitTabId}`);
+    return found;
+  }
+  if (tabs.length === 1) return tabs[0];
+  if (tabs.length === 0) {
+    throw new Error(
+      'browser_no_such_tab: no browser tab is open; open a tab first'
+    );
+  }
+  throw new Error(
+    'browser_invalid: more than one browser tab is open; pass tabId (see browser_list_tabs)'
+  );
+}
+
+async function executeBrowserTool(tool, args) {
+  try {
+    const result = await callHost('browser', tool.operation, args);
+    if (
+      (tool.name === 'browser_open_tab' || tool.name === 'browser_navigate') &&
+      args.waitForLoad &&
+      result?.loading &&
+      result?.tabId
+    ) {
+      const deadline = Date.now() + 2500;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 120));
+        try {
+          const chrome = await callHost('browser', 'tab.chrome', {
+            tabId: result.tabId,
+          });
+          if (chrome && typeof chrome.url === 'string' && chrome.url) {
+            result.url = chrome.url;
+            result.title = chrome.title || result.title || '';
+            result.loading = false;
+            break;
+          }
+        } catch {
+          // Tab still initializing
+        }
+      }
+    }
+    return result;
+  } catch (error) {
+    if (!isUnimplementedHostError(error)) {
+      throw error;
+    }
+    if (tool.operation === 'console.read') {
+      const tab = await resolveFallbackTab(args.tabId);
+      const since = Number(args.since ?? 0) || 0;
+      const limit = Math.min(200, Math.max(1, Number(args.limit ?? 100) || 100));
+      const evalRes = await callHost('browser', 'eval.run', {
+        tabId: tab.tabId,
+        evalApproval: 'silent',
+        code: `(function(){
+          if (!Array.isArray(window.__codegConsoleEntries)) {
+            window.__codegConsoleEntries = [];
+            window.__codegConsoleSeq = 0;
+            ['debug','log','info','warn','error'].forEach(function(level){
+              var orig = console[level];
+              if (typeof orig !== 'function') return;
+              console[level] = function(){
+                try {
+                  var seq = ++window.__codegConsoleSeq;
+                  var text = Array.prototype.slice.call(arguments).map(function(a){
+                    return typeof a === 'string' ? a : JSON.stringify(a);
+                  }).join(' ');
+                  window.__codegConsoleEntries.push({ seq: seq, level: level, source: 'console', text: text });
+                  if (window.__codegConsoleEntries.length > 200) window.__codegConsoleEntries.shift();
+                } catch(e){}
+                return orig.apply(console, arguments);
+              };
+            });
+          }
+          var entries = window.__codegConsoleEntries.filter(function(e){ return e.seq > ${since}; }).slice(-${limit});
+          return JSON.stringify({
+            url: location.href,
+            entries: entries,
+            nextSeq: window.__codegConsoleSeq || 0,
+            dropped: 0,
+            crossOriginDropped: 0
+          });
+        })()`,
+      });
+      try {
+        return JSON.parse(String(evalRes?.value ?? '{}'));
+      } catch {
+        return {
+          url: tab.url,
+          entries: [],
+          nextSeq: 0,
+          dropped: 0,
+          crossOriginDropped: 0,
+        };
+      }
+    }
+    if (tool.operation === 'screenshot') {
+      const tab = await resolveFallbackTab(args.tabId);
+      const frame = await callHost('browser', 'surface.freeze', {
+        tabId: tab.tabId,
+      }).catch(() => null);
+      return {
+        tabId: tab.tabId,
+        url: tab.url,
+        target: args.ref || null,
+        mime: frame?.mime || (args.format === 'jpeg' ? 'image/jpeg' : 'image/png'),
+        data: frame?.data || '',
+        width: Number(args.maxWidth) || 1280,
+        height: 800,
+      };
+    }
+    throw error;
+  }
 }
 
 function handleMessage(message) {
@@ -235,36 +754,58 @@ function handleMessage(message) {
     const name = params?.name;
     const tool = allTools.find((item) => item.name === name);
     if (!config.toolsEnabled || !tool) {
-      fail(id, 'browser_tools_disabled');
+      replyToolError(
+        id,
+        'browser_tools_disabled: Agent browser tools are disabled in Settings → Browser.'
+      );
       return;
     }
     if (tool.name === 'browser_eval' && !config.evalEnabled) {
-      fail(id, 'browser_eval_disabled');
+      replyToolError(
+        id,
+        'browser_eval_disabled: Running page JavaScript is disabled in Settings → Browser.'
+      );
       return;
     }
     const args = { ...(params?.arguments ?? {}) };
     if (tool.name === 'browser_click') {
       args.kind = args.kind || 'click';
-    }
-    if (tool.name === 'browser_type') {
+    } else if (tool.name === 'browser_hover') {
+      args.kind = 'hover';
+    } else if (tool.name === 'browser_type') {
       args.kind = 'type';
+    } else if (tool.name === 'browser_press_key') {
+      args.kind = 'press';
+    } else if (tool.name === 'browser_select_option') {
+      args.kind = 'select';
+    } else if (tool.name === 'browser_open_tab') {
+      if (args.grant == null && config.defaultGrant !== 'none') {
+        args.grant = config.defaultGrant;
+      }
+      if (!args.profileId && config.newTabProfile) {
+        args.profileId = config.newTabProfile;
+      }
+      if (args.waitForLoad == null) {
+        args.waitForLoad = true;
+      }
+    } else if (tool.name === 'browser_navigate') {
+      if (args.waitForLoad == null) {
+        args.waitForLoad = true;
+      }
+    } else if (tool.name === 'browser_eval') {
+      args.evalApproval = config.evalApproval;
     }
-    if (
-      tool.name === 'browser_open_tab' &&
-      args.grant == null &&
-      config.defaultGrant !== 'none'
-    ) {
-      args.grant = config.defaultGrant;
-    }
-    callHost('browser', tool.operation, args)
-      .then((result) =>
-        reply(id, {
-          content: [{ type: 'text', text: JSON.stringify(result) }],
-        })
-      )
-      .catch((error) =>
-        fail(id, error instanceof Error ? error.message : String(error))
-      );
+    executeBrowserTool(tool, args)
+      .then((result) => {
+        const content = formatToolOutput(tool.name, result);
+        reply(id, { content });
+      })
+      .catch((error) => {
+        replyToolError(
+          id,
+          error instanceof Error ? error.message : String(error)
+        );
+      });
     return;
   }
   if (id != null) {
