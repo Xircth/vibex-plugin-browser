@@ -1,15 +1,15 @@
 {
   "$schema": "https://schemas.vibex.dev/plugin/v4/plugin.schema.json",
   "manifestVersion": 4,
-  "apiVersion": "1.0",
+  "apiVersion": "2.0",
   "id": "vibex.browser",
   "publisher": "vibex",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "name": "Browser",
   "readme": "README.md",
   "engines": {
     "vibex": ">=0.1.3 <1.0.0",
-    "pluginSdk": "^1.0.0"
+    "pluginSdk": "^2.0.0"
   },
   "content": {
     "root": "contents",
@@ -29,23 +29,43 @@
           "properties": {
             "transcript": {
               "type": "string",
-              "enum": ["builtin", "system", "ask"]
+              "enum": [
+                "builtin",
+                "system",
+                "ask"
+              ]
             },
             "toolCard": {
               "type": "string",
-              "enum": ["builtin", "system", "ask"]
+              "enum": [
+                "builtin",
+                "system",
+                "ask"
+              ]
             },
             "terminal": {
               "type": "string",
-              "enum": ["builtin", "system", "ask"]
+              "enum": [
+                "builtin",
+                "system",
+                "ask"
+              ]
             },
             "editor": {
               "type": "string",
-              "enum": ["builtin", "system", "ask"]
+              "enum": [
+                "builtin",
+                "system",
+                "ask"
+              ]
             },
             "notification": {
               "type": "string",
-              "enum": ["builtin", "system", "ask"]
+              "enum": [
+                "builtin",
+                "system",
+                "ask"
+              ]
             }
           }
         },
@@ -56,12 +76,21 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["pattern", "action"],
+            "required": [
+              "pattern",
+              "action"
+            ],
             "properties": {
-              "pattern": { "type": "string" },
+              "pattern": {
+                "type": "string"
+              },
               "action": {
                 "type": "string",
-                "enum": ["builtin", "system", "block"]
+                "enum": [
+                  "builtin",
+                  "system",
+                  "block"
+                ]
               }
             }
           }
@@ -75,7 +104,11 @@
           "type": "string",
           "title": "Default share level",
           "description": "Applied when a new tab is opened.",
-          "enum": ["none", "read", "control"]
+          "enum": [
+            "none",
+            "read",
+            "control"
+          ]
         },
         "originGrants": {
           "type": "object",
@@ -91,13 +124,20 @@
           "type": "string",
           "title": "JavaScript approval mode",
           "description": "Whether every eval snippet requires interactive confirmation or runs silently on control-shared tabs.",
-          "enum": ["ask", "silent"]
+          "enum": [
+            "ask",
+            "silent"
+          ]
         },
         "serviceAutoOpen": {
           "type": "string",
           "title": "Local service detection",
           "description": "How VibeX responds when a dev server prints a localhost URL.",
-          "enum": ["off", "toast", "auto"]
+          "enum": [
+            "off",
+            "toast",
+            "auto"
+          ]
         },
         "terminalClickMenu": {
           "type": "boolean",
@@ -113,7 +153,10 @@
           "type": "string",
           "title": "Surface mode",
           "description": "Force a separate browser window or use the platform default embedded surface.",
-          "enum": ["auto", "window"]
+          "enum": [
+            "auto",
+            "window"
+          ]
         },
         "suspendBackgroundTabs": {
           "type": "boolean",
@@ -132,10 +175,17 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "label"],
+            "required": [
+              "id",
+              "label"
+            ],
             "properties": {
-              "id": { "type": "string" },
-              "label": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
             }
           }
         },
@@ -154,9 +204,8 @@
       "protocol": "1.1"
     },
     "app": {
-      "root": "dist/app",
-      "document": "index.html",
-      "protocol": "1.0"
+      "entry": "app/main.js",
+      "protocol": "2.0"
     }
   },
   "integrations": [
@@ -169,7 +218,9 @@
       "defaultPosition": "center",
       "multiInstance": true,
       "engine": "host-browser",
-      "allowedMethods": ["browser.dispatch"]
+      "allowedMethods": [
+        "browser.dispatch"
+      ]
     },
     {
       "id": "browser-settings",
@@ -177,12 +228,9 @@
       "title": "浏览器",
       "icon": "globe",
       "handler": "surface.createSession",
-      "allowedMethods": ["browser.dispatch"],
-      "remote": {
-        "name": "vibex_browser",
-        "entry": "dist/remoteEntry.js",
-        "module": "./view"
-      }
+      "allowedMethods": [
+        "browser.dispatch"
+      ]
     },
     {
       "id": "settings",
@@ -191,7 +239,9 @@
       "label": "浏览器设置",
       "appEntrypoint": "app",
       "handler": "surface.createSession",
-      "allowedMethods": ["browser.dispatch"],
+      "allowedMethods": [
+        "browser.dispatch"
+      ],
       "minHeight": 240
     },
     {
@@ -199,7 +249,11 @@
       "kind": "app.rail.section",
       "title": "Browser",
       "icon": "globe",
-      "opens": { "kind": "app.panel", "id": "browser", "instance": "focus" }
+      "opens": {
+        "kind": "app.panel",
+        "id": "browser",
+        "instance": "focus"
+      }
     },
     {
       "id": "browser-tools",
